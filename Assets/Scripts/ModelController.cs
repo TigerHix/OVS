@@ -10,7 +10,8 @@ public class ModelController : MonoBehaviour
     
     public CubismModel model;
 
-    public OpenFaceTransfer ofTransfer;
+    public OpenFaceTransfer input;
+    public CubismManualEyeBlink eyeBlinkController;
     public Button calibrateHeadOriginButton;
 
     public string paramAngleXKey = "PARAM_ANGLE_X";
@@ -23,23 +24,29 @@ public class ModelController : MonoBehaviour
     public string paramBrowRYKey = "PARAM_BROW_R_Y";
     public string paramMouthOpenYKey = "PARAM_MOUTH_OPEN_Y";
     public string paramMouthFormKey = "PARAM_MOUTH_FORM";
+    public string paramCheekKey = "PARAM_CHEEK";
 
     public float headAngleMultiplier = 2f;
     public float bodyAngleMultiplier = 0.8f;
     public float eyeBallMultiplier = 1f;
     public float browMultiplier = 1f;
     public float mouthOpenMultiplier = 1f;
+    public float mouthOpenThreshold = 0.3f;
     public float mouthFormMultiplier = 1f;
+    public float blinkThreshold = 1f;
     public float tweenDuration = 0.2f;
     public float eyesTweenDuration = 0.6f;
     public float browsTweenDuration = 0.1f;
     public float mouthTweenDuration = 0.1f;
+    public float cheekTweenDuration = 2f;
+    public bool cheekMouthFormLink = true;
+    public float cheekMouthFormLinkMultiplier = 1f;
     public Dictionary<int, float> auSmoothingFrames = new Dictionary<int, float>
     {
-        {1, 12},
-        {12, 4},
-        {23, 4},
-        {25, 4}
+        {1, 12}, // Eyebrow
+        {12, 3}, // Mouth form
+        {23, 3}, 
+        {45, 1}  // Blink
     };
 
     private Vector3 headOriginPosition = Vector3.zero;
@@ -58,6 +65,7 @@ public class ModelController : MonoBehaviour
     private CubismParameter paramBrowRY;
     private CubismParameter paramMouthOpenY;
     private CubismParameter paramMouthForm;
+    private CubismParameter paramCheek;
     
     private bool isCalibrated;
 
@@ -74,21 +82,22 @@ public class ModelController : MonoBehaviour
         paramBrowRY = model.Parameters.FindById(paramBrowRYKey);
         paramMouthOpenY = model.Parameters.FindById(paramMouthOpenYKey);
         paramMouthForm = model.Parameters.FindById(paramMouthFormKey);
+        paramCheek = model.Parameters.FindById(paramCheekKey);
         calibrateHeadOriginButton.onClick.AddListener(OnCalibratePoseOrigin);
     }
 
     private void OnCalibratePoseOrigin()
     {
-        headOriginPosition = ofTransfer.HeadPosition;
-        headOriginRotation = ofTransfer.HeadRotation;
-        eyesGazeOriginAngle = ofTransfer.EyesGazeAngle;
+        headOriginPosition = input.HeadPosition;
+        headOriginRotation = input.HeadRotation;
+        eyesGazeOriginAngle = input.EyesGazeAngle;
         originAu = new float[65];
-        ofTransfer.ActionUnitIntensities.CopyTo(originAu, 0);
+        input.ActionUnitIntensities.CopyTo(originAu, 0);
     }
 
     private void LateUpdate()
     {
-        if (!ofTransfer.IsInitialized) return;
+        if (!input.IsInitialized) return;
 
         if (!isCalibrated)
         {
@@ -98,21 +107,21 @@ public class ModelController : MonoBehaviour
         
         // Face angle
         DOTween.To(() => paramAngleX.Value, v => paramAngleX.Value = v,
-            (ofTransfer.HeadRotation.y - headOriginRotation.y) * Mathf.Rad2Deg * headAngleMultiplier, tweenDuration);
+            (input.HeadRotation.y - headOriginRotation.y) * Mathf.Rad2Deg * headAngleMultiplier, tweenDuration);
         DOTween.To(() => paramAngleY.Value, v => paramAngleY.Value = v,
-            -(ofTransfer.HeadRotation.x - headOriginRotation.x) * Mathf.Rad2Deg * headAngleMultiplier, tweenDuration);
+            -(input.HeadRotation.x - headOriginRotation.x) * Mathf.Rad2Deg * headAngleMultiplier, tweenDuration);
         DOTween.To(() => paramAngleZ.Value, v => paramAngleZ.Value = v,
-            -(ofTransfer.HeadRotation.z - headOriginRotation.z) * Mathf.Rad2Deg * headAngleMultiplier, tweenDuration);
+            -(input.HeadRotation.z - headOriginRotation.z) * Mathf.Rad2Deg * headAngleMultiplier, tweenDuration);
         
         // Body angle
         DOTween.To(() => paramBodyAngleZ.Value, v => paramBodyAngleZ.Value = v,
-            -(ofTransfer.HeadRotation.z - headOriginRotation.z) * Mathf.Rad2Deg * bodyAngleMultiplier, tweenDuration);
+            -(input.HeadRotation.z - headOriginRotation.z) * Mathf.Rad2Deg * bodyAngleMultiplier, tweenDuration);
         
         // Eye ball angle
         DOTween.To(() => paramEyeBallX.Value, v => paramEyeBallX.Value = v,
-            -(ofTransfer.EyesGazeAngle.x - eyesGazeOriginAngle.x) * eyeBallMultiplier, eyesTweenDuration);
+            -(input.EyesGazeAngle.x - eyesGazeOriginAngle.x) * eyeBallMultiplier, eyesTweenDuration);
         DOTween.To(() => paramEyeBallY.Value, v => paramEyeBallY.Value = v,
-            -(ofTransfer.EyesGazeAngle.y - eyesGazeOriginAngle.y) * eyeBallMultiplier, eyesTweenDuration);
+            -(input.EyesGazeAngle.y - eyesGazeOriginAngle.y) * eyeBallMultiplier, eyesTweenDuration);
         
         // Eyebrow raise
         DOTween.To(() => paramBrowLY.Value, 
@@ -124,18 +133,36 @@ public class ModelController : MonoBehaviour
             browsTweenDuration);
         
         // Mouth open
+        var mouthInnerToOuterRatio = (input.LandmarkPositions[62].y - input.LandmarkPositions[66].y) / ((input.LandmarkPositions[51].y - input.LandmarkPositions[62].y) + (input.LandmarkPositions[66].y - input.LandmarkPositions[57].y));
+        mouthInnerToOuterRatio -= mouthOpenThreshold;
         DOTween.To(() => paramMouthOpenY.Value, v => paramMouthOpenY.Value = v,
-            AuRollingAverage(25) * mouthOpenMultiplier, mouthTweenDuration);
-
+            mouthInnerToOuterRatio * mouthOpenMultiplier, mouthTweenDuration);
+        
         // Mouth form
         DOTween.To(() => paramMouthForm.Value, v => paramMouthForm.Value = v,
             (AuRollingAverage(12) - AuRollingAverage(23) * 3) * mouthFormMultiplier, mouthTweenDuration);
+
+        if (cheekMouthFormLink)
+        {
+            DOTween.To(() => paramCheek.Value, v => paramCheek.Value = v,
+                Mathf.Max(0.5f, paramMouthForm.Value) * cheekMouthFormLinkMultiplier, cheekTweenDuration);
+        }
+        
+        // Blink
+        if (AuRollingAverage(45) >= blinkThreshold)
+        {
+            eyeBlinkController.Close();
+        }
+        else
+        {
+            eyeBlinkController.Open();
+        }
 
         for (var i = 0; i < lastAu.Length; i++)
         {
             if (!auSmoothingFrames.ContainsKey(i)) continue;
             var q = lastAu[i];
-            q.Enqueue(ofTransfer.ActionUnitIntensities[i]);
+            q.Enqueue(input.ActionUnitIntensities[i]);
             if (q.Count > auSmoothingFrames[i])
             {
                 q.Dequeue();

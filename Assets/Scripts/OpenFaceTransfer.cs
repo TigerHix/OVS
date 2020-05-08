@@ -1,11 +1,10 @@
 ﻿﻿using System;
 using System.Runtime.InteropServices;
 using System.Threading;
- using Cysharp.Threading.Tasks;
- using Microsoft.Win32.SafeHandles;
+using Microsoft.Win32.SafeHandles;
 using UnityEngine;
- using UnityEngine.Assertions;
- using UnityEngine.Events;
+using UnityEngine.Assertions;
+using UnityEngine.Events;
 using UnityEngine.UI;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -27,6 +26,7 @@ public sealed class OpenFaceTransfer : MonoBehaviour
     public Vector2 EyesGazeAngle { get; private set; }
     public Vector3 LeftEyeGazeDirection { get; private set; }
     public Vector3 RightEyeGazeDirection { get; private set; }
+    public Vector3[] LandmarkPositions { get; private set; }
     public float[] ActionUnitIntensities { get; private set; }
    
     public UnityEvent OnOpenFaceInitialized { get; } = new UnityEvent();
@@ -93,6 +93,18 @@ public sealed class OpenFaceTransfer : MonoBehaviour
                     EyesGazeAngle = new Vector2(data[0], data[1]);
                     LeftEyeGazeDirection = new Vector3(data[2], data[3], data[4]);
                     RightEyeGazeDirection = new Vector3(data[5], data[6], data[7]);
+                }
+                
+                using (TransferOpData(OpDataType.DetectedLandmarks, out var data, out var length))
+                {
+                    Assert.AreEqual(68 * 3, length);
+                    LandmarkPositions = new Vector3[68];
+                    var p = 0;
+                    for (var i = 0; i < 68; i++)
+                    {
+                        LandmarkPositions[i] = new Vector3(data[p], data[p + 1], data[p + 2]);
+                        p += 3;
+                    }
                 }
 
                 using (TransferOpData(OpDataType.ActionUnits, out var data, out var length))
