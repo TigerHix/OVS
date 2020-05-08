@@ -1,11 +1,12 @@
 ﻿﻿using System;
 using System.Runtime.InteropServices;
 using System.Threading;
- using Live2D.Cubism.Core;
+ using Cysharp.Threading.Tasks;
  using Microsoft.Win32.SafeHandles;
 using UnityEngine;
+ using UnityEngine.Assertions;
  using UnityEngine.Events;
- using UnityEngine.UI;
+using UnityEngine.UI;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -13,40 +14,41 @@ using UnityEditor;
 public sealed class OpenFaceTransfer : MonoBehaviour
 {
     private static Thread opThread;
-
+    private static readonly int[] AvailableActionUnits = {1, 2, 4, 5, 6, 7, 9, 10, 12, 14, 15, 17, 20, 23, 25, 26, 45};
+    
     public Image ofTrackingPreview;
 
     public bool IsInitialized { get; private set; }
     public bool IsTracking { get; private set; }
     public float DetectionCertainty { get; private set; }
+
     public Vector3 HeadPosition { get; private set; }
     public Vector3 HeadRotation { get; private set; }
     public Vector2 EyesGazeAngle { get; private set; }
     public Vector3 LeftEyeGazeDirection { get; private set; }
     public Vector3 RightEyeGazeDirection { get; private set; }
-
-    public UnityEvent OnTrackingInitialized { get; } = new UnityEvent();
+    public float[] ActionUnitIntensities { get; private set; }
+   
+    public UnityEvent OnOpenFaceInitialized { get; } = new UnityEvent();
     public UnityEvent OnTrackingStarted { get; } = new UnityEvent();
     public UnityEvent OnTrackingLost { get; } = new UnityEvent();
-
-    private void Awake()
-    {
-        tex = new Texture2D(640, 480, TextureFormat.ARGB32, false);
-        pixel32 = tex.GetPixels32();
-        // Pin pixel32 array
-        pixelHandle = GCHandle.Alloc(pixel32, GCHandleType.Pinned);
-        // Get the pinned address
-        pixelPtr = pixelHandle.AddrOfPinnedObject();
-
-        ofTrackingPreview.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero, 100f, 0U, SpriteMeshType.FullRect);
-    }
 
     private void Start()
     {
         // Not running?
         if (opThread == null)
         {
-            print("Starting daemon");
+            print("Initializing OpenFace");
+            
+            tex = new Texture2D(640, 480, TextureFormat.ARGB32, false);
+            ofTrackingPreview.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), Vector2.zero, 100f, 0U, SpriteMeshType.FullRect);
+
+            pixel32 = tex.GetPixels32();
+            // Pin pixel32 array
+            pixelHandle = GCHandle.Alloc(pixel32, GCHandleType.Pinned);
+            // Get the pinned address
+            pixelPtr = pixelHandle.AddrOfPinnedObject();
+
             opThread = new Thread(OpThread);
             opThread.Start();
         }
@@ -65,6 +67,15 @@ public sealed class OpenFaceTransfer : MonoBehaviour
 
     private unsafe void Update()
     {
+        if (OpStatusCode() < 0) return;
+        
+        if (!IsInitialized)
+        {
+            print("OpenFace initialized");
+            IsInitialized = true;
+            OnOpenFaceInitialized.Invoke();
+        }
+            
         using (TransferOpData(OpDataType.DetectionCertainty, out var certaintyData, out _))
         {
             // Actual certainty is in the range -1~1.
@@ -83,17 +94,22 @@ public sealed class OpenFaceTransfer : MonoBehaviour
                     LeftEyeGazeDirection = new Vector3(data[2], data[3], data[4]);
                     RightEyeGazeDirection = new Vector3(data[5], data[6], data[7]);
                 }
+
+                using (TransferOpData(OpDataType.ActionUnits, out var data, out var length))
+                {
+                    Assert.AreEqual(17, length);
+                    ActionUnitIntensities = new float[65];
+                    var p = 0;
+                    foreach (var index in AvailableActionUnits)
+                    {
+                        ActionUnitIntensities[index] = data[p++];
+                    }
+                }
                 
                 if (!IsTracking)
                 {
                     IsTracking = true;
                     OnTrackingStarted.Invoke();
-                    if (!IsInitialized)
-                    {
-                        print("OpenFace initialized");
-                        IsInitialized = true;
-                        OnTrackingInitialized.Invoke();
-                    }
                 }
             }
             else
@@ -108,7 +124,7 @@ public sealed class OpenFaceTransfer : MonoBehaviour
 
         // Convert Mat to Texture2D
         TransferRawCapturedImage(pixelPtr, tex.width, tex.height);
-        
+
         // Update the Texture2D with array updated in C++
         tex.SetPixels32(pixel32);
         tex.Apply();
@@ -119,7 +135,10 @@ public sealed class OpenFaceTransfer : MonoBehaviour
         opThread?.Abort();
         opThread = null;
         OpExit();
-        pixelHandle.Free();
+        if (pixelHandle.IsAllocated)
+        {
+            pixelHandle.Free();
+        }
     }
 
     private enum OpDataType
@@ -127,7 +146,8 @@ public sealed class OpenFaceTransfer : MonoBehaviour
         DetectionCertainty = 0,
         GazeDirections = 1,
         PoseEstimate = 2,
-        DetectedLandmarks = 3
+        DetectedLandmarks = 3,
+        ActionUnits = 4
     }
     
     private static unsafe OpDataSafeHandle TransferOpData(OpDataType type, out float* data, out int length)
