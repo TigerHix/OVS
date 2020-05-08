@@ -4,7 +4,7 @@ An open-source VTuber software.
 
 # References
 
-OVS used [OpenFace](https://github.com/TadasBaltrusaitis/OpenFace), a facial behavior analysis toolkit from CMU, for face tracking.
+OVS uses [OpenFace](https://github.com/TadasBaltrusaitis/OpenFace), a facial behavior analysis toolkit from CMU, for face tracking.
 
 [1] **OpenFace 2.0: Facial Behavior Analysis Toolkit**
 Tadas Baltrušaitis, Amir Zadeh, Yao Chong Lim, and Louis-Philippe Morency,
@@ -29,4 +29,4 @@ _IEEE International Conference on Automatic Face and Gesture Recognition_, 2015
 
 # License
 
-OVS is released under [GNU GPLv3](https://github.com/TigerHix/OVS/blob/master/LICENSE). Note that this license does **not** apply to OpenFace, Cubism SDK, and Live2D components. Unfortunately, that means **you may not use OVS commercially**, unless you have a commercial license from [OpenFace](https://github.com/TadasBaltrusaitis/OpenFace#commercial-license) and [Live2D Inc](https://github.com/Live2D/CubismUnityComponents#license). You are free to use OVS for any noncommercial or academic purpose.
+OVS is released under [GNU GPLv3](https://github.com/TigerHix/OVS/blob/master/LICENSE). Note that this license does **not** apply to OpenFace, Cubism SDK, and Live2D components. Unfortunately, that means **you may not use OVS commercially**, unless you have obtained commercial license from [OpenFace](https://github.com/TadasBaltrusaitis/OpenFace#commercial-license) and [Live2D Inc](https://github.com/Live2D/CubismUnityComponents#license). You are free to use OVS for any noncommercial or research purpose.
